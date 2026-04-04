@@ -1,73 +1,98 @@
 from datamodel import OrderDepth, TradingState, Order
 from typing import List, Dict
-
-# Self-cap 20: strong tutorial backtests; official round may use 80 — adjust then.
-POSITION_LIMITS: Dict[str, int] = {
-    "EMERALDS": 20,
-    "TOMATOES": 20,
-}
-DEFAULT_POSITION_LIMIT = 20
-
+import json
 
 class Trader:
-    """
-    Baseline MM (mid, spread//4, tick skew). One tweak: size 6 when nearly flat, 5 otherwise.
-    """
+    # V1: Tighter first layer on both products
+    EMERALDS_FAIR = 10000
+    EMERALDS_SKEW_FACTOR = 0.4
+    EMERALDS_LIMIT = 80
+    EMERALDS_LAYERS = [
+        {"offset": 3, "size": 20},   # CHANGED: 4→3
+        {"offset": 5, "size": 15},
+        {"offset": 7, "size": 15},
+    ]
+
+    TOMATOES_SKEW_FACTOR = 0.4
+    TOMATOES_LIMIT = 80
+    TOMATOES_OFI_ALPHA = 2.0
+    TOMATOES_MEAN_REV_BETA = 0.3
+    TOMATOES_MOMENTUM_WINDOW = 5
+    TOMATOES_LAYERS = [
+        {"offset": 3, "size": 20},   # CHANGED: 4→3
+        {"offset": 5, "size": 15},
+        {"offset": 7, "size": 10},
+    ]
 
     def run(self, state: TradingState):
         result: Dict[str, List[Order]] = {}
-        trader_data = state.traderData if state.traderData is not None else ""
+        td = self._ld(state.traderData)
+        if "EMERALDS" in state.order_depths:
+            result["EMERALDS"] = self._em(state, td)
+        if "TOMATOES" in state.order_depths:
+            result["TOMATOES"] = self._tom(state, td)
+        for p in state.order_depths:
+            if p not in result: result[p] = []
+        return result, 0, json.dumps(td)
 
-        for product in state.order_depths:
-            depth: OrderDepth = state.order_depths[product]
-            orders: List[Order] = []
+    def _em(self, state, td):
+        p = "EMERALDS"; od = state.order_depths[p]; pos = state.position.get(p, 0)
+        orders = []; fair = self.EMERALDS_FAIR; lim = self.EMERALDS_LIMIT
+        bc = lim - pos; sc = lim + pos
+        if od.sell_orders:
+            for ap in sorted(od.sell_orders):
+                if ap < fair and bc > 0:
+                    q = min(abs(od.sell_orders[ap]), bc)
+                    if q > 0: orders.append(Order(p, ap, q)); pos += q; bc -= q
+        if od.buy_orders:
+            for bp in sorted(od.buy_orders, reverse=True):
+                if bp > fair and sc > 0:
+                    q = min(od.buy_orders[bp], sc)
+                    if q > 0: orders.append(Order(p, bp, -q)); pos -= q; sc -= q
+        skew = -pos * self.EMERALDS_SKEW_FACTOR; adj = fair + skew
+        for ly in self.EMERALDS_LAYERS:
+            bs = min(ly["size"], bc); ss = min(ly["size"], sc)
+            if bs > 0: orders.append(Order(p, int(round(adj - ly["offset"])), bs)); bc -= bs
+            if ss > 0: orders.append(Order(p, int(round(adj + ly["offset"])), -ss)); sc -= ss
+        return orders
 
-            if not depth.buy_orders or not depth.sell_orders:
-                result[product] = []
-                continue
+    def _tom(self, state, td):
+        p = "TOMATOES"; od = state.order_depths[p]; pos = state.position.get(p, 0)
+        orders = []; lim = self.TOMATOES_LIMIT
+        bb = max(od.buy_orders) if od.buy_orders else None
+        ba = min(od.sell_orders) if od.sell_orders else None
+        if bb is None or ba is None: return orders
+        bv1 = od.buy_orders[bb]; av1 = abs(od.sell_orders[ba]); mid = (bb + ba) / 2.0
+        top = bv1 + av1; micro = (bb * av1 + ba * bv1) / top if top > 0 else mid
+        tbv = sum(od.buy_orders.values()); tav = sum(abs(v) for v in od.sell_orders.values())
+        tv = tbv + tav; ofi = (tbv - tav) / tv if tv > 0 else 0.0
+        fair = micro + self.TOMATOES_OFI_ALPHA * ofi
+        ph = td.get("tp", []); ph.append(mid)
+        if len(ph) > 20: ph = ph[-20:]
+        td["tp"] = ph; mom = 0.0; w = self.TOMATOES_MOMENTUM_WINDOW
+        if len(ph) > w: mom = ph[-1] - ph[-1 - w]
+        fair += -self.TOMATOES_MEAN_REV_BETA * mom
+        bc = lim - pos; sc = lim + pos
+        if od.sell_orders:
+            for ap in sorted(od.sell_orders):
+                if ap < fair - 1 and bc > 0:
+                    q = min(abs(od.sell_orders[ap]), bc)
+                    if q > 0: orders.append(Order(p, ap, q)); pos += q; bc -= q
+        if od.buy_orders:
+            for bp in sorted(od.buy_orders, reverse=True):
+                if bp > fair + 1 and sc > 0:
+                    q = min(od.buy_orders[bp], sc)
+                    if q > 0: orders.append(Order(p, bp, -q)); pos -= q; sc -= q
+        skew = -pos * self.TOMATOES_SKEW_FACTOR; adj = fair + skew
+        for ly in self.TOMATOES_LAYERS:
+            bs = min(ly["size"], bc); ss = min(ly["size"], sc)
+            if bs > 0: orders.append(Order(p, int(round(adj - ly["offset"])), bs)); bc -= bs
+            if ss > 0: orders.append(Order(p, int(round(adj + ly["offset"])), -ss)); sc -= ss
+        return orders
 
-            best_bid = max(depth.buy_orders.keys())
-            best_ask = min(depth.sell_orders.keys())
-            if best_bid >= best_ask:
-                result[product] = []
-                continue
-
-            pos = state.position.get(product, 0)
-            limit = POSITION_LIMITS.get(product, DEFAULT_POSITION_LIMIT)
-
-            mid = (best_bid + best_ask) / 2.0
-            spread = best_ask - best_bid
-            edge = max(1, spread // 4)
-
-            skew = 0
-            if pos > limit // 2:
-                skew = max(1, spread // 8)
-            elif pos < -limit // 2:
-                skew = -max(1, spread // 8)
-
-            bid_px = int(round(mid - edge - skew))
-            ask_px = int(round(mid + edge - skew))
-
-            bid_px = min(bid_px, best_ask - 1)
-            ask_px = max(ask_px, best_bid + 1)
-            bid_px = max(bid_px, best_bid - 1)
-            ask_px = min(ask_px, best_ask + 1)
-
-            order_size = 6 if abs(pos) <= 5 else 5
-            room_buy = limit - pos
-            room_sell = limit + pos
-
-            if room_buy > 0 and bid_px < best_ask:
-                qty = min(order_size, room_buy)
-                if qty > 0:
-                    orders.append(Order(product, bid_px, qty))
-
-            if room_sell > 0 and ask_px > best_bid:
-                qty = min(order_size, room_sell)
-                if qty > 0:
-                    orders.append(Order(product, ask_px, -qty))
-
-            result[product] = orders
-
-        conversions = 0
-        return result, conversions, trader_data
+    @staticmethod
+    def _ld(s):
+        if s and s.strip():
+            try: return json.loads(s)
+            except: pass
+        return {}

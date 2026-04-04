@@ -1,0 +1,6 @@
+run backtester
+cd /Users/efren/Desktop/imc-prosperity-4 && source backtester/.venv/bin/activate && prosperity4mcbt test_algo.py --quick --vis --out tmp/starter_test/dashboard.json
+
+
+run dashboard
+cd /Users/efren/Desktop/imc-prosperity-4/visualizer && npm run dev
