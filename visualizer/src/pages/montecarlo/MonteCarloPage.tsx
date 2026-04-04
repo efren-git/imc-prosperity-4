@@ -1,7 +1,7 @@
 import { Badge, Container, Grid, Group, MultiSelect, Select, Table, Tabs, Text, Title } from '@mantine/core';
 import axios from 'axios';
 import Highcharts from 'highcharts';
-import { ReactNode, useEffect, useState } from 'react';
+import { ReactNode, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MonteCarloDashboard } from '../../models.ts';
 import { useStore } from '../../store.ts';
@@ -64,6 +64,15 @@ function resolveSelectedRuns(selectedIds: string[], runs: LocalRunInfo[]): Local
     }
   }
   return out;
+}
+
+/** Stable string so we can avoid resetting React state when the poll returns identical runs. */
+function runsListFingerprint(runs: LocalRunInfo[]): string {
+  return runs.map(r => `${r.id}\0${r.mtimeMs}\0${r.dashboardUrl}`).join('\n');
+}
+
+function targetsFetchKey(targets: LocalRunInfo[]): string {
+  return targets.map(t => `${t.id}\0${t.mtimeMs}\0${t.dashboardUrl}`).join('\n');
 }
 
 type LocalDashboardStatus = {
@@ -356,6 +365,7 @@ export function MonteCarloPage(): ReactNode {
   const [selectedRunIds, setSelectedRunIds] = useState<string[]>([LATEST_RUN_VALUE]);
   const [bandProduct, setBandProduct] = useState('TOMATOES');
   const [detailRunKey, setDetailRunKey] = useState<string>('');
+  const lastFetchedTargetsKeyRef = useRef<string | null>(null);
 
   const searchParams = new URLSearchParams(search);
   const explicitOpenUrl = searchParams.get('open');
@@ -397,7 +407,12 @@ export function MonteCarloPage(): ReactNode {
         }
 
         const runs = response.data.runs ?? [];
-        setAvailableRuns(runs);
+        setAvailableRuns(previous => {
+          if (runsListFingerprint(runs) === runsListFingerprint(previous)) {
+            return previous;
+          }
+          return runs;
+        });
 
         setSelectedRunIds(previous => {
           const filtered = previous.filter(id => id === LATEST_RUN_VALUE || runs.some(run => run.id === id));
@@ -433,6 +448,7 @@ export function MonteCarloPage(): ReactNode {
     }
 
     if (explicitOpenUrl !== null) {
+      lastFetchedTargetsKeyRef.current = null;
       const url = withVersion(explicitOpenUrl, null);
       setLoadError(null);
       setLoadedRunEntries(null);
@@ -486,7 +502,13 @@ export function MonteCarloPage(): ReactNode {
 
     const targets = resolveSelectedRuns(selectedRunIds, availableRuns);
     if (targets.length === 0) {
+      lastFetchedTargetsKeyRef.current = null;
       setLoadedRunEntries(null);
+      return;
+    }
+
+    const targetsKey = targetsFetchKey(targets);
+    if (lastFetchedTargetsKeyRef.current === targetsKey) {
       return;
     }
 
@@ -523,10 +545,12 @@ export function MonteCarloPage(): ReactNode {
           };
         });
 
+        lastFetchedTargetsKeyRef.current = targetsKey;
         setLoadedRunEntries(nextEntries);
         setStatus('Dashboard loaded');
       } catch (error) {
         if (!cancelled) {
+          lastFetchedTargetsKeyRef.current = null;
           setLoadError(error as Error);
         }
       }
@@ -639,6 +663,7 @@ export function MonteCarloPage(): ReactNode {
                   <MultiSelect
                     w={320}
                     label="Runs"
+                    description="Pick two or more runs to show the comparison table and overlaid PnL charts."
                     placeholder="Select runs"
                     value={selectedRunIds}
                     onChange={values => {
