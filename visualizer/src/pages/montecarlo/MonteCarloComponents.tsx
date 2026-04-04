@@ -196,6 +196,21 @@ export function normalFitSeries(fit: MonteCarloNormalFit): Highcharts.SeriesSpli
   };
 }
 
+export function normalFitSeriesNamed(
+  fit: MonteCarloNormalFit,
+  name: string,
+  color: string,
+  lineWidth = 2,
+): Highcharts.SeriesSplineOptions {
+  return {
+    type: 'spline',
+    name,
+    color,
+    lineWidth,
+    data: fit.line,
+  };
+}
+
 export function distributionLineSeries(histogram: MonteCarloHistogram, name: string, color: string): Highcharts.SeriesLineOptions {
   return {
     type: 'line',
@@ -339,6 +354,94 @@ export function SessionRankingTable({
               <Table.Td>{formatNumber(row.runMeanTotalR2 ?? row.totalR2, 3)}</Table.Td>
             </Table.Tr>
           ))}
+        </Table.Tbody>
+      </Table>
+    </VisualizerCard>
+  );
+}
+
+export interface MonteCarloRunComparisonRow {
+  key: string;
+  label: string;
+  dashboard: MonteCarloDashboard;
+}
+
+export function RunComparisonTable({ rows }: { rows: MonteCarloRunComparisonRow[] }): ReactNode {
+  if (rows.length < 2) {
+    return null;
+  }
+
+  return (
+    <VisualizerCard title="Run comparison">
+      <Table striped withTableBorder withColumnBorders style={{ minWidth: 640 }}>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Metric</Table.Th>
+            {rows.map(row => (
+              <Table.Th key={row.key}>
+                <Text fw={600}>{row.label}</Text>
+                <Text size="xs" c="dimmed">
+                  {row.dashboard.meta.algorithmPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() ?? row.label}
+                </Text>
+              </Table.Th>
+            ))}
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          <Table.Tr>
+            <Table.Td>Mean total PnL</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-mean`}>{formatNumber(row.dashboard.overall.totalPnl.mean)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>Total PnL 1σ</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-std`}>{formatNumber(row.dashboard.overall.totalPnl.std)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>P05 total PnL</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-p05`}>{formatNumber(row.dashboard.overall.totalPnl.p05)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>Median total PnL</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-p50`}>{formatNumber(row.dashboard.overall.totalPnl.p50)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>P95 total PnL</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-p95`}>{formatNumber(row.dashboard.overall.totalPnl.p95)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>Profitability (total, mean)</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-prof`}>{formatSlope(row.dashboard.trendFits.TOTAL.profitability.mean)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>Stability (total, mean R²)</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-stab`}>{formatNumber(row.dashboard.trendFits.TOTAL.stability.mean, 3)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>EMERALDS mean PnL</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-em`}>{formatNumber(row.dashboard.products.EMERALDS.pnl.mean)}</Table.Td>
+            ))}
+          </Table.Tr>
+          <Table.Tr>
+            <Table.Td>TOMATOES mean PnL</Table.Td>
+            {rows.map(row => (
+              <Table.Td key={`${row.key}-to`}>{formatNumber(row.dashboard.products.TOMATOES.pnl.mean)}</Table.Td>
+            ))}
+          </Table.Tr>
         </Table.Tbody>
       </Table>
     </VisualizerCard>
