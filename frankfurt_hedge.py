@@ -6,14 +6,31 @@ from statistics import NormalDist
 
 _N = NormalDist()
 
-####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL  
+####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL ####### GENERAL
+
+# ── Round 4 active symbols ────────────────────────────────────────────────────
+# StaticTrader strategy (previously RAINFOREST_RESIN)
+STATIC_SYMBOL = 'EMERALDS'
+# DynamicTrader strategy (previously KELP)
+DYNAMIC_SYMBOL = 'TOMATOES'
+
+# ── Round 3 symbols – kept for future rounds that may reintroduce similar assets
+# Swap STATIC_SYMBOL / DYNAMIC_SYMBOL back to these and re-register in product_traders
+# STATIC_SYMBOL  = 'RAINFOREST_RESIN'   # StaticTrader – stable fair-value mm
+# DYNAMIC_SYMBOL = 'KELP'               # DynamicTrader – informed-trader following
+# INK_SYMBOL     = 'SQUID_INK'          # InkTrader     – pure informed-signal directional
+# ETF_BASKET_SYMBOLS     = ['PICNIC_BASKET1', 'PICNIC_BASKET2']
+# ETF_CONSTITUENT_SYMBOLS = ['CROISSANTS', 'JAMS', 'DJEMBES']
+# OPTION_UNDERLYING_SYMBOL = 'VOLCANIC_ROCK'
+# OPTION_SYMBOLS = ['VOLCANIC_ROCK_VOUCHER_9500', 'VOLCANIC_ROCK_VOUCHER_9750',
+#                   'VOLCANIC_ROCK_VOUCHER_10000', 'VOLCANIC_ROCK_VOUCHER_10250',
+#                   'VOLCANIC_ROCK_VOUCHER_10500']
+# COMMODITY_SYMBOL = 'MAGNIFICENT_MACARONS'  # CommodityTrader – conversion arb
+
+INK_SYMBOL = 'SQUID_INK'
 
 ETF_BASKET_SYMBOLS = ['PICNIC_BASKET1', 'PICNIC_BASKET2']
 ETF_CONSTITUENT_SYMBOLS = ['CROISSANTS', 'JAMS', 'DJEMBES']
-
-STATIC_SYMBOL = 'RAINFOREST_RESIN'
-DYNAMIC_SYMBOL = 'KELP'
-INK_SYMBOL = 'SQUID_INK'
 
 OPTION_UNDERLYING_SYMBOL = 'VOLCANIC_ROCK'
 
@@ -27,20 +44,21 @@ OPTION_SYMBOLS = [
     'VOLCANIC_ROCK_VOUCHER_10500'
     ]
 
+# ── Position limits ───────────────────────────────────────────────────────────
+# Round 4 limits
 POS_LIMITS = {
-    STATIC_SYMBOL: 50, 
-    DYNAMIC_SYMBOL: 50,
-    INK_SYMBOL: 50,
-    ETF_BASKET_SYMBOLS[0]: 60,
-    ETF_BASKET_SYMBOLS[1]: 100,
-    ETF_CONSTITUENT_SYMBOLS[0]: 250,
-    ETF_CONSTITUENT_SYMBOLS[1]: 350,
-    ETF_CONSTITUENT_SYMBOLS[2]: 60,
-
-    OPTION_UNDERLYING_SYMBOL: 400,
-    **{os: 200 for os in OPTION_SYMBOLS},
-
-    COMMODITY_SYMBOL: 75,
+    STATIC_SYMBOL: 80,   # EMERALDS
+    DYNAMIC_SYMBOL: 80,  # TOMATOES
+    # Round 3 limits – restore when those assets return
+    # INK_SYMBOL: 50,
+    # ETF_BASKET_SYMBOLS[0]: 60,
+    # ETF_BASKET_SYMBOLS[1]: 100,
+    # ETF_CONSTITUENT_SYMBOLS[0]: 250,
+    # ETF_CONSTITUENT_SYMBOLS[1]: 350,
+    # ETF_CONSTITUENT_SYMBOLS[2]: 60,
+    # OPTION_UNDERLYING_SYMBOL: 400,
+    # **{os: 200 for os in OPTION_SYMBOLS},
+    # COMMODITY_SYMBOL: 75,
 }
 
 CONVERSION_LIMIT = 10
@@ -98,8 +116,8 @@ options_mean_reversion_window = 30
 
 
 # This is the base ProductTrader class that has all the commonly used utility attributes and methods already implemented for individual traders
-class Trader:
-
+class ProductTrader:
+    
     def __init__(self, name, state, prints, new_trader_data, product_group=None):
 
         self.orders = []
@@ -272,7 +290,7 @@ class Trader:
 
 
 # Rainforest Raisin
-class StaticTrader(Trader):
+class StaticTrader(ProductTrader):
     def __init__(self, state, prints, new_trader_data):
         super().__init__(STATIC_SYMBOL, state, prints, new_trader_data)
 
@@ -332,7 +350,7 @@ class StaticTrader(Trader):
 
 
 # Kelp
-class DynamicTrader(Trader):
+class DynamicTrader(ProductTrader):
     def __init__(self, state, prints, new_trader_data):
         super().__init__(DYNAMIC_SYMBOL, state, prints, new_trader_data)
 
@@ -379,7 +397,7 @@ class DynamicTrader(Trader):
 
 
 
-class InkTrader(Trader):
+class InkTrader(ProductTrader):
     def __init__(self, state, prints, new_trader_data):
         super().__init__(INK_SYMBOL, state, prints, new_trader_data)
 
@@ -482,11 +500,11 @@ class EtfTrader:
                 SHORT: -ETF_THR_INFORMED_ADJS[b_idx]
             }.get(self.informed_direction, 0)
 
-            if self.spreads[basket.name] > (BASKET_THRESHOLDS[b_idx] + informed_thr_adj) and basket.max_allowed_sell_volume > 0:
+            if self.spreads[b_idx] > (BASKET_THRESHOLDS[b_idx] + informed_thr_adj) and basket.max_allowed_sell_volume > 0:
                 basket.ask(basket.bid_wall, basket.max_allowed_sell_volume)
                 basket.expected_position -= min(basket.total_mkt_sell_volume, basket.max_allowed_sell_volume)
 
-            elif self.spreads[basket.name] < (-BASKET_THRESHOLDS[b_idx] + informed_thr_adj) and basket.max_allowed_buy_volume > 0:
+            elif self.spreads[b_idx] < (-BASKET_THRESHOLDS[b_idx] + informed_thr_adj) and basket.max_allowed_buy_volume > 0:
                 basket.bid(basket.ask_wall, basket.max_allowed_buy_volume)
                 basket.expected_position += min(basket.total_mkt_buy_volume, basket.max_allowed_buy_volume)
 
@@ -772,7 +790,7 @@ class OptionTrader:
 
 
 # Magnificent Macarons
-class CommodityTrader(Trader):
+class CommodityTrader(ProductTrader):
     def __init__(self, state, prints, new_trader_data):
         super().__init__(COMMODITY_SYMBOL, state, prints, new_trader_data)
 
@@ -895,13 +913,15 @@ class Trader:
             except: pass
 
 
+        # ── Round 4 active traders ────────────────────────────────────────────────
         product_traders = {
-            STATIC_SYMBOL: StaticTrader,
-            DYNAMIC_SYMBOL: DynamicTrader,
-            INK_SYMBOL: InkTrader,
-            ETF_BASKET_SYMBOLS[0]: EtfTrader,
-            OPTION_UNDERLYING_SYMBOL: OptionTrader,
-            COMMODITY_SYMBOL: CommodityTrader,
+            STATIC_SYMBOL: StaticTrader,   # EMERALDS  – stable mm
+            DYNAMIC_SYMBOL: DynamicTrader, # TOMATOES  – informed-signal following
+            # ── Uncomment as new assets are introduced in future rounds ──────────
+            # INK_SYMBOL: InkTrader,
+            # ETF_BASKET_SYMBOLS[0]: EtfTrader,
+            # OPTION_UNDERLYING_SYMBOL: OptionTrader,
+            # COMMODITY_SYMBOL: CommodityTrader,
         }
 
         result, conversions = {}, 0
@@ -912,8 +932,10 @@ class Trader:
                     trader = product_trader(state, prints, new_trader_data)
                     result.update(trader.get_orders())
 
-                    if symbol == COMMODITY_SYMBOL:
-                        conversions = trader.get_conversions()
+                    # Conversions only apply to COMMODITY_SYMBOL (MAGNIFICENT_MACARONS)
+                    # Uncomment when that asset returns:
+                    # if symbol == COMMODITY_SYMBOL:
+                    #     conversions = trader.get_conversions()
                 except: pass
 
 

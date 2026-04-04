@@ -90,6 +90,8 @@ http://127.0.0.1:5555/
 
 That works because the local visualizer proxies `/dashboard.json` and the related sidecar files to the local dashboard file server on port `8001`.
 
+**Comparing multiple Monte Carlo runs in the dashboard:** write each sweep to its own folder under the same parent directory (for example `tmp/mc_runs/algo_a/dashboard.json` and `tmp/mc_runs/algo_b/dashboard.json`). The local dashboard server lists every sibling folder that contains a `dashboard.json`, and the Monte Carlo page can load several at once from the **Runs** control to compare metrics and overlaid PnL fits.
+
 If you just want a smoke test, run the bundled starter template unchanged:
 
 ```bash
