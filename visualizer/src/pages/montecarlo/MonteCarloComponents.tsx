@@ -1,4 +1,4 @@
-import { Container, Group, Loader, Table, Text } from '@mantine/core';
+import { Container, Group, List, Loader, Stack, Table, Text } from '@mantine/core';
 import Highcharts from 'highcharts';
 import HighchartsMore from 'highcharts/highcharts-more';
 import HighchartsAccessibility from 'highcharts/modules/accessibility';
@@ -12,6 +12,13 @@ import { useActualColorScheme } from '../../hooks/use-actual-color-scheme.ts';
 import { MonteCarloBandSeries, MonteCarloDashboard, MonteCarloDistributionStats, MonteCarloHistogram, MonteCarloNormalFit } from '../../models.ts';
 import { formatNumber } from '../../utils/format.ts';
 import { VisualizerCard } from '../visualizer/VisualizerCard.tsx';
+import {
+  COMPARISON_METRICS,
+  computeCompositeScores,
+  countMetricWins,
+  effectiveDirection,
+  rowBestWorstKeys,
+} from './monteCarloCompareUtils.ts';
 
 HighchartsAccessibility(Highcharts);
 HighchartsExporting(Highcharts);
@@ -366,10 +373,23 @@ export interface MonteCarloRunComparisonRow {
   dashboard: MonteCarloDashboard;
 }
 
+function formatComparisonMetricCell(metricId: string, value: number): string {
+  if (metricId === 'profitability') {
+    return formatSlope(value);
+  }
+  if (metricId === 'stability') {
+    return formatNumber(value, 3);
+  }
+  return formatNumber(value);
+}
+
 export function RunComparisonTable({ rows }: { rows: MonteCarloRunComparisonRow[] }): ReactNode {
   if (rows.length < 2) {
     return null;
   }
+
+  const runKeys = rows.map(row => row.key);
+  const totalPnlMeans = rows.map(row => row.dashboard.overall.totalPnl.mean);
 
   return (
     <VisualizerCard title="Run comparison">
@@ -388,62 +408,109 @@ export function RunComparisonTable({ rows }: { rows: MonteCarloRunComparisonRow[
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
-          <Table.Tr>
-            <Table.Td>Mean total PnL</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-mean`}>{formatNumber(row.dashboard.overall.totalPnl.mean)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>Total PnL 1σ</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-std`}>{formatNumber(row.dashboard.overall.totalPnl.std)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>P05 total PnL</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-p05`}>{formatNumber(row.dashboard.overall.totalPnl.p05)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>Median total PnL</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-p50`}>{formatNumber(row.dashboard.overall.totalPnl.p50)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>P95 total PnL</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-p95`}>{formatNumber(row.dashboard.overall.totalPnl.p95)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>Profitability (total, mean)</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-prof`}>{formatSlope(row.dashboard.trendFits.TOTAL.profitability.mean)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>Stability (total, mean R²)</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-stab`}>{formatNumber(row.dashboard.trendFits.TOTAL.stability.mean, 3)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>EMERALDS mean PnL</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-em`}>{formatNumber(row.dashboard.products.EMERALDS.pnl.mean)}</Table.Td>
-            ))}
-          </Table.Tr>
-          <Table.Tr>
-            <Table.Td>TOMATOES mean PnL</Table.Td>
-            {rows.map(row => (
-              <Table.Td key={`${row.key}-to`}>{formatNumber(row.dashboard.products.TOMATOES.pnl.mean)}</Table.Td>
-            ))}
-          </Table.Tr>
+          {COMPARISON_METRICS.map(def => {
+            const direction = effectiveDirection(def, totalPnlMeans);
+            const values = rows.map(row => def.getValue(row.dashboard));
+            const { bestKeys } = rowBestWorstKeys(runKeys, values, direction);
+            return (
+              <Table.Tr key={def.id}>
+                <Table.Td>{def.label}</Table.Td>
+                {rows.map(row => {
+                  const value = def.getValue(row.dashboard);
+                  const text = formatComparisonMetricCell(def.id, value);
+                  const isBest = bestKeys.has(row.key);
+                  let color: `teal.6` | undefined;
+                  if (direction !== 'neutral' && isBest) {
+                    color = 'teal.6';
+                  }
+                  return (
+                    <Table.Td key={`${row.key}-${def.id}`}>
+                      <Text fw={isBest ? 700 : 400} c={color}>
+                        {text}
+                      </Text>
+                    </Table.Td>
+                  );
+                })}
+              </Table.Tr>
+            );
+          })}
         </Table.Tbody>
       </Table>
+      <Text size="xs" c="dimmed" mt="sm">
+        Green = best in row for that metric. Total PnL 1σ is only colored when mean total PnL is similar across runs (within ~5% of scale); otherwise volatility is left neutral.
+      </Text>
+    </VisualizerCard>
+  );
+}
+
+export function RunComparisonLeaderboard({ rows }: { rows: MonteCarloRunComparisonRow[] }): ReactNode {
+  if (rows.length < 2) {
+    return null;
+  }
+
+  const wins = useMemo(() => {
+    const keys = rows.map(row => row.key);
+    const dashboardsByKey = new Map(rows.map(row => [row.key, row.dashboard]));
+    return countMetricWins(keys, dashboardsByKey);
+  }, [rows]);
+
+  const composite = useMemo(() => {
+    const keys = rows.map(row => row.key);
+    const dashboardsByKey = new Map(rows.map(row => [row.key, row.dashboard]));
+    const labelsByKey = new Map(rows.map(row => [row.key, row.label]));
+    return computeCompositeScores(keys, labelsByKey, dashboardsByKey);
+  }, [rows]);
+
+  return (
+    <Stack gap="md">
+      <VisualizerCard title="Metric wins (count)">
+        <Text size="sm" c="dimmed" mb="xs">
+          +1 for each metric row where this run is best (ties count for each tied run). Excludes rows marked neutral.
+        </Text>
+        <List spacing="xs" size="sm" listStyleType="disc">
+          {[...wins.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([key, count]) => (
+              <List.Item key={key}>
+                <Text span fw={600}>
+                  {rows.find(row => row.key === key)?.label ?? key}
+                </Text>
+                {`: ${count} wins`}
+              </List.Item>
+            ))}
+        </List>
+      </VisualizerCard>
+      <VisualizerCard title="Composite score (heuristic)">
+        <Text size="sm" c="dimmed" mb="xs">
+          Z-scores within each metric row, weighted (mean PnL 35%, P05 15%, profitability 15%, stability 10%, etc.). Higher is better. Not official IMC scoring.
+        </Text>
+        <List spacing="xs" size="sm" listStyleType="disc">
+          {composite.map((row, index) => (
+            <List.Item key={row.runKey}>
+              <Text span fw={index === 0 ? 700 : 500}>
+                {row.label}
+              </Text>
+              {`: ${formatNumber(row.score, 3)}`}
+            </List.Item>
+          ))}
+        </List>
+      </VisualizerCard>
+    </Stack>
+  );
+}
+
+export function RunComparisonInsightsPanel({ bullets }: { bullets: string[] }): ReactNode {
+  if (bullets.length === 0) {
+    return null;
+  }
+
+  return (
+    <VisualizerCard title="Quick insights">
+      <List spacing="sm" size="sm" listStyleType="disc">
+        {bullets.map((line, index) => (
+          <List.Item key={index}>{line}</List.Item>
+        ))}
+      </List>
     </VisualizerCard>
   );
 }

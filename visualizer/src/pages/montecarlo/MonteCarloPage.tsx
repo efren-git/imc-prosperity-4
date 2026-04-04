@@ -1,7 +1,22 @@
-import { Badge, Container, Grid, Group, MultiSelect, Select, Table, Tabs, Text, Title } from '@mantine/core';
+import {
+  Affix,
+  Badge,
+  Container,
+  Grid,
+  Group,
+  MultiSelect,
+  Paper,
+  SegmentedControl,
+  Select,
+  Stack,
+  Table,
+  Tabs,
+  Text,
+  Title,
+} from '@mantine/core';
 import axios from 'axios';
 import Highcharts from 'highcharts';
-import { ReactNode, useEffect, useRef, useState } from 'react';
+import { ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { MonteCarloDashboard } from '../../models.ts';
 import { useStore } from '../../store.ts';
@@ -19,11 +34,14 @@ import {
   MonteCarloRunComparisonRow,
   normalFitSeries,
   normalFitSeriesNamed,
+  RunComparisonInsightsPanel,
+  RunComparisonLeaderboard,
   RunComparisonTable,
   SessionRankingTable,
   SimpleChart,
   SummaryTable,
 } from './MonteCarloComponents.tsx';
+import { buildMonteCarloComparisonInsights } from './monteCarloInsights.ts';
 
 const LATEST_RUN_VALUE = '__latest__';
 
@@ -588,6 +606,15 @@ export function MonteCarloPage(): ReactNode {
     }
   }, [activeDashboard, bandProduct]);
 
+  const insightBullets = useMemo(() => {
+    if (displayEntries === null || displayEntries.length < 2) {
+      return [];
+    }
+    return buildMonteCarloComparisonInsights(
+      displayEntries.map(entry => ({ label: entry.label, dashboard: entry.dashboard })),
+    );
+  }, [displayEntries]);
+
   const showLoading =
     displayEntries === null && loadError === null && (explicitOpenUrl !== null || localMode);
 
@@ -645,7 +672,7 @@ export function MonteCarloPage(): ReactNode {
   );
 
   return (
-    <Container fluid py="md">
+    <Container fluid py="md" pb={isMultiCompare ? 120 : 'md'}>
       <Grid>
         <Grid.Col span={12}>
           <VisualizerCard>
@@ -654,7 +681,7 @@ export function MonteCarloPage(): ReactNode {
                 <Title order={2}>Monte Carlo Results</Title>
                 <Text c="dimmed">
                   {isMultiCompare
-                    ? `Comparing ${entries.length} runs (badges reflect the first selected run; use tabs below for per-run detail)`
+                    ? `Comparing ${entries.length} runs (badges reflect the first selected run; use the sticky tabs or bottom bar for per-run detail)`
                     : strategyName}
                 </Text>
               </div>
@@ -696,7 +723,17 @@ export function MonteCarloPage(): ReactNode {
 
         {isMultiCompare && (
           <Grid.Col span={12}>
-            <RunComparisonTable rows={compareRows} />
+            <Grid>
+              <Grid.Col span={{ base: 12, lg: 8 }}>
+                <RunComparisonTable rows={compareRows} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, lg: 4 }}>
+                <Stack gap="md">
+                  <RunComparisonLeaderboard rows={compareRows} />
+                  <RunComparisonInsightsPanel bullets={insightBullets} />
+                </Stack>
+              </Grid.Col>
+            </Grid>
           </Grid.Col>
         )}
 
@@ -801,13 +838,15 @@ export function MonteCarloPage(): ReactNode {
         {isMultiCompare ? (
           <Grid.Col span={12}>
             <Tabs value={detailRunKey} onChange={value => value !== null && setDetailRunKey(value)}>
-              <Tabs.List>
-                {entries.map(entry => (
-                  <Tabs.Tab key={entry.runKey} value={entry.runKey}>
-                    {entry.label}
-                  </Tabs.Tab>
-                ))}
-              </Tabs.List>
+              <Paper withBorder shadow="sm" radius="md" mb="md" p="xs" style={{ position: 'sticky', top: 0, zIndex: 40 }}>
+                <Tabs.List grow>
+                  {entries.map(entry => (
+                    <Tabs.Tab key={entry.runKey} value={entry.runKey}>
+                      {entry.label}
+                    </Tabs.Tab>
+                  ))}
+                </Tabs.List>
+              </Paper>
               {entries.map(entry => (
                 <Tabs.Panel key={entry.runKey} value={entry.runKey} pt="md">
                   <Grid>
@@ -822,6 +861,33 @@ export function MonteCarloPage(): ReactNode {
                 </Tabs.Panel>
               ))}
             </Tabs>
+            <Affix position={{ bottom: 0, left: 0, right: 0 }} zIndex={100}>
+              <Paper
+                p="sm"
+                radius={0}
+                shadow="md"
+                withBorder
+                style={{
+                  borderLeft: 0,
+                  borderRight: 0,
+                  borderBottom: 0,
+                }}
+              >
+                <Group justify="center" wrap="wrap" gap="sm">
+                  <Text size="sm" fw={600}>
+                    Per-run detail
+                  </Text>
+                  <SegmentedControl
+                    value={detailRunKey}
+                    onChange={value => setDetailRunKey(value)}
+                    data={entries.map(entry => ({
+                      value: entry.runKey,
+                      label: entry.label.length > 26 ? `${entry.label.slice(0, 24)}…` : entry.label,
+                    }))}
+                  />
+                </Group>
+              </Paper>
+            </Affix>
           </Grid.Col>
         ) : (
           <MonteCarloDetailTail
