@@ -411,7 +411,7 @@ export function RunComparisonTable({ rows }: { rows: MonteCarloRunComparisonRow[
           {COMPARISON_METRICS.map(def => {
             const direction = effectiveDirection(def, totalPnlMeans);
             const values = rows.map(row => def.getValue(row.dashboard));
-            const { bestKeys } = rowBestWorstKeys(runKeys, values, direction);
+            const { bestKeys, worstKeys } = rowBestWorstKeys(runKeys, values, direction);
             return (
               <Table.Tr key={def.id}>
                 <Table.Td>{def.label}</Table.Td>
@@ -419,9 +419,14 @@ export function RunComparisonTable({ rows }: { rows: MonteCarloRunComparisonRow[
                   const value = def.getValue(row.dashboard);
                   const text = formatComparisonMetricCell(def.id, value);
                   const isBest = bestKeys.has(row.key);
-                  let color: `teal.6` | undefined;
-                  if (direction !== 'neutral' && isBest) {
-                    color = 'teal.6';
+                  const isWorst = worstKeys.has(row.key);
+                  let color: `teal.6` | `red.6` | undefined;
+                  if (direction !== 'neutral') {
+                    if (isBest) {
+                      color = 'teal.6';
+                    } else if (isWorst) {
+                      color = 'red.6';
+                    }
                   }
                   return (
                     <Table.Td key={`${row.key}-${def.id}`}>
@@ -437,7 +442,7 @@ export function RunComparisonTable({ rows }: { rows: MonteCarloRunComparisonRow[
         </Table.Tbody>
       </Table>
       <Text size="xs" c="dimmed" mt="sm">
-        Green = best in row for that metric. Total PnL 1σ is only colored when mean total PnL is similar across runs (within ~5% of scale); otherwise volatility is left neutral.
+        Green = best in row for that metric; red = worst. Total PnL 1σ is only colored when mean total PnL is similar across runs (within ~5% of scale); otherwise volatility is left neutral.
       </Text>
     </VisualizerCard>
   );

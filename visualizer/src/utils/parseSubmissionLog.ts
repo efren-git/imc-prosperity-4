@@ -240,17 +240,17 @@ export function parseSubmissionLog(raw: RawSubmissionLog): Algorithm {
   const data: AlgorithmDataRow[] = [];
 
   for (const entry of raw.logs) {
-    if (!entry.lambdaLog) continue;
-
-    let lambdaLog: RawLambdaLog;
-    try {
-      lambdaLog = JSON.parse(entry.lambdaLog) as RawLambdaLog;
-    } catch {
-      continue;
-    }
-
-    const ts = lambdaLog.GENERAL.TIMESTAMP;
+    const ts = entry.timestamp;
     const activityRows = activityByTimestamp.get(ts) ?? [];
+
+    let lambdaData: RawLambdaLog | null = null;
+    if (entry.lambdaLog) {
+      try {
+        lambdaData = JSON.parse(entry.lambdaLog) as RawLambdaLog;
+      } catch {
+        // ignore malformed lambdaLog
+      }
+    }
 
     const state: TradingState = {
       timestamp: ts,
@@ -259,7 +259,7 @@ export function parseSubmissionLog(raw: RawSubmissionLog): Algorithm {
       orderDepths: buildOrderDepths(activityRows),
       ownTrades: ownByTs.get(ts) ?? {},
       marketTrades: marketByTs.get(ts) ?? {},
-      position: lambdaLog.GENERAL.POSITIONS,
+      position: lambdaData?.GENERAL.POSITIONS ?? {},
       observations: {
         plainValueObservations: {},
         conversionObservations: {},
@@ -268,7 +268,7 @@ export function parseSubmissionLog(raw: RawSubmissionLog): Algorithm {
 
     data.push({
       state,
-      orders: parseOrders((lambdaLog.ORDERS as RawOrder[]) ?? []),
+      orders: lambdaData ? parseOrders((lambdaData.ORDERS as RawOrder[]) ?? []) : {},
       conversions: 0,
       traderData: '',
       algorithmLogs: '',

@@ -1,6 +1,6 @@
 import { Slider, SliderProps, Stack, Text, Title } from '@mantine/core';
 import { useHotkeys } from '@mantine/hooks';
-import { ReactNode, useState } from 'react';
+import { ReactNode } from 'react';
 import { Algorithm } from '../../models.ts';
 import { formatNumber } from '../../utils/format.ts';
 import { OrderDepthTable } from '../visualizer/OrderDepthTable.tsx';
@@ -9,9 +9,11 @@ import { VisualizerCard } from '../visualizer/VisualizerCard.tsx';
 interface SubmissionSidePanelProps {
   algorithm: Algorithm;
   selectedProduct: string;
+  timestamp: number;
+  onTimestampChange: (ts: number) => void;
 }
 
-export function SubmissionSidePanel({ algorithm, selectedProduct }: SubmissionSidePanelProps): ReactNode {
+export function SubmissionSidePanel({ algorithm, selectedProduct, timestamp, onTimestampChange }: SubmissionSidePanelProps): ReactNode {
   const data = algorithm.data;
 
   if (data.length === 0) {
@@ -22,11 +24,9 @@ export function SubmissionSidePanel({ algorithm, selectedProduct }: SubmissionSi
   const timestampMax = data[data.length - 1].state.timestamp;
   const timestampStep = data.length > 1 ? data[1].state.timestamp - data[0].state.timestamp : 100;
 
-  const [timestamp, setTimestamp] = useState(timestampMin);
-
   useHotkeys([
-    ['ArrowLeft', () => setTimestamp(t => (t <= timestampMin ? t : t - timestampStep))],
-    ['ArrowRight', () => setTimestamp(t => (t >= timestampMax ? t : t + timestampStep))],
+    ['ArrowLeft', () => onTimestampChange(timestamp <= timestampMin ? timestamp : timestamp - timestampStep)],
+    ['ArrowRight', () => onTimestampChange(timestamp >= timestampMax ? timestamp : timestamp + timestampStep)],
   ]);
 
   // Index data by timestamp for O(1) lookup
@@ -58,7 +58,7 @@ export function SubmissionSidePanel({ algorithm, selectedProduct }: SubmissionSi
           marks={marks}
           label={v => formatNumber(v)}
           value={timestamp}
-          onChange={setTimestamp}
+          onChange={onTimestampChange}
           mb="xl"
         />
         <Text size="xs" c="dimmed">
@@ -93,6 +93,33 @@ export function SubmissionSidePanel({ algorithm, selectedProduct }: SubmissionSi
             No orders placed this tick
           </Text>
         )}
+      </VisualizerCard>
+
+      <VisualizerCard title="Trades this tick">
+        {(() => {
+          const ownTrades = currentRow?.state.ownTrades[selectedProduct] ?? [];
+          const marketTrades = currentRow?.state.marketTrades[selectedProduct] ?? [];
+          const allTickTrades = [...ownTrades, ...marketTrades];
+          if (allTickTrades.length === 0) {
+            return <Text size="xs" c="dimmed">No trades at this timestamp</Text>;
+          }
+          return (
+            <Stack gap={2}>
+              {allTickTrades.map((t, i) => {
+                const isOwnBuy = t.buyer === 'SUBMISSION';
+                const isOwnSell = t.seller === 'SUBMISSION';
+                const color = isOwnBuy ? 'green' : isOwnSell ? 'red' : 'dimmed';
+                const side = isOwnBuy ? 'BUY' : isOwnSell ? 'SELL' : 'MKT';
+                return (
+                  <Text key={i} size="sm" c={color}>
+                    {side} {Math.abs(t.quantity)} @ {formatNumber(t.price)}
+                    <Text span size="xs" c="dimmed"> ({t.buyer} → {t.seller})</Text>
+                  </Text>
+                );
+              })}
+            </Stack>
+          );
+        })()}
       </VisualizerCard>
     </Stack>
   );

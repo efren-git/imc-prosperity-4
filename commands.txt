@@ -3,4 +3,4 @@ cd /Users/efren/Desktop/imc-prosperity-4 && source backtester/.venv/bin/activate
 
 
 run dashboard
-cd /Users/efren/Desktop/imc-prosperity-4/visualizer && npm run dev
+cd /Users/efren/Desktop/imc-prosperity-4/visualizer && npm run devx
