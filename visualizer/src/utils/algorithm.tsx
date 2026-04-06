@@ -24,6 +24,7 @@ import {
   TradingState,
 } from '../models.ts';
 import { authenticatedAxios } from './axios.ts';
+import { isRawSubmissionLog, isRawSubmissionJson, parseSubmissionLog, parseSubmissionJson } from './parseSubmissionLog.ts';
 
 export class AlgorithmParseError extends Error {
   public constructor(public readonly node: ReactNode) {
@@ -289,16 +290,32 @@ export type ParsedVisualizerInput =
 export function parseVisualizerInput(content: string | object, summary?: AlgorithmSummary): ParsedVisualizerInput {
   const parsed = typeof content === 'string' ? (() => {
     try {
-      return JSON.parse(content) as MonteCarloDashboard;
+      return JSON.parse(content);
     } catch {
       return null;
     }
-  })() : (content as MonteCarloDashboard);
+  })() : content;
 
-  if (parsed && parsed.kind === 'monte_carlo_dashboard') {
+  if (parsed && (parsed as MonteCarloDashboard).kind === 'monte_carlo_dashboard') {
     return {
       kind: 'monteCarlo',
-      monteCarlo: parsed,
+      monteCarlo: parsed as MonteCarloDashboard,
+    };
+  }
+
+  // IMC submission .log format (has submissionId + logs[] + tradeHistory)
+  if (isRawSubmissionLog(parsed)) {
+    return {
+      kind: 'algorithm',
+      algorithm: parseSubmissionLog(parsed),
+    };
+  }
+
+  // IMC submission .json format (has round + graphLog, no submissionId)
+  if (isRawSubmissionJson(parsed)) {
+    return {
+      kind: 'algorithm',
+      algorithm: parseSubmissionJson(parsed),
     };
   }
 
